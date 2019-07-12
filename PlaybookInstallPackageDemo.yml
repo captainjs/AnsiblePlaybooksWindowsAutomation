@@ -1,0 +1,76 @@
+
+---
+- name: Playbook to install an internal package from local chocolatey.server source
+  hosts: all
+  vars:
+#replace the url of the chocolatey.server and uncomment the following line
+#    - sctv_choco_server: http://url of choco server/chocolatey
+    
+  tasks:
+    
+    - name: run tests
+      win_shell: winrm enumerate winrm/config/Listener
+      register: winrmoutput
+    
+    - name: debug winrmoutput
+      debug: 
+        var: winrmoutput
+    
+    - name: "Initialize server for deployment"
+      block:
+      - name: Check connection to {{ inventory_hostname }}
+        win_ping:
+        tags: ping
+
+      - name: Check if choco server is reachable from clients
+        win_uri:
+          url: "{{ sctv_choco_server }}"
+
+      - name: Ensure Chocolatey itself is installed from the internal repo as source
+        win_chocolatey:
+          name: chocolatey
+          source: "{{ sctv_choco_server }}"
+          validate_certs: no
+
+      - name: Add new internal source
+        win_chocolatey_source:
+          name: internal repo
+          state: present
+          source: "{{ sctv_choco_server }}"
+
+      - name: Exit when reboot required
+        win_chocolatey_feature:
+          name: exitOnRebootDetected
+          state: enabled
+
+      - name: Enable global confirmation
+        win_chocolatey_feature:
+          name: allowGlobalConfirmation
+          state: enabled
+#The following task will remove the internet repository as a default source
+      - name: Remove the default public source.
+        win_chocolatey_source:
+          name: chocolatey
+          state: absent
+      tags: init
+        
+#Ensure the user has admin rights prior to run this
+
+    - name: "Install internal App"
+      block:
+      - name: Install internal choco package
+        win_chocolatey:
+          name: internalapp
+          force: yes
+          version: '0.0.1'
+        register: internalinstall
+        ignore_errors: true
+     
+      - name: debug for internalinstall
+        debug:
+          var: internalinstall
+
+      - name: Reboot only if needed during internal Install
+        win_reboot:
+        when: internalinstall.rc == 350 or internalinstall.rc == 1604
+...
