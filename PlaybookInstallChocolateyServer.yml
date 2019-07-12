@@ -1,0 +1,193 @@
+
+---
+- name: Test Playbook
+  hosts: all
+  
+  tasks:
+    - name: Ping Test
+      win_ping:
+      
+    - name: run tests
+      win_shell: winrm enumerate winrm/config/Listener
+      register: winrmoutput
+    
+    - name: debug winrmoutput
+      debug: 
+        var: winrmoutput
+        
+        
+    - name: Ensure Chocolatey itself is installed and use latest version
+      win_chocolatey:
+        name: chocolatey
+        state: latest
+        validate_certs: no
+        
+#Start the installation of the chocolatey server
+    - name:  Install KB2919355 
+      win_chocolatey:
+        name: KB2919355
+        state: present
+      register: KB2919355_installed
+      
+    - name: debug KBinstall
+      debug: 
+        var: KB2919355_installed  
+        
+    - name: Reboot
+      win_reboot: 
+      when: KB2919355_installed.changed
+
+    - name:  Install KB2919442 
+      win_chocolatey:
+        name: KB2919442
+        state: present
+      register: KB2919442_installed
+      
+    - name: debug KBinstall2
+      debug: 
+        var: KB2919442_installed  
+        
+    - name: Reboot
+      win_reboot: 
+      when: KB2919442_installed.changed
+      
+    - name:  Install Dotnet4.6.1 
+      win_chocolatey:
+        name:  dotnet4.6.1 
+        state: present
+      register:  dotnet461_installed
+      
+    - name: debug dotnet461
+      debug: 
+        var: dotnet461_installed  
+        
+    - name: Reboot
+      win_reboot: 
+      when: dotnet461_installed.changed
+      
+    - name:  Install chocolatey server
+      win_chocolatey:
+        name:  chocolatey.server
+        state: latest
+      register:  chocolateyserver_installed
+
+    - name:  Install IIS-WebServer 
+      win_chocolatey:
+        name:  IIS-WebServer 
+        state: latest
+        source: windowsfeatures
+      register:  IISwebserver_installed
+        
+        
+    - name:  Install IIS-ASPNET45        
+      win_chocolatey:
+        name:  IIS-ASPNET45 
+        state: latest
+        source: windowsfeatures
+      register:  IIS-ASPNET45_installed
+       
+    - name: Remove Default Web Site
+      win_iis_website:
+        name: "Default Web Site"
+        state: absent
+
+    - name: create a new application pool in 'Started' state
+      win_iis_webapppool:
+        name: ChocolateyServerAppPool
+        state: started
+        attributes:
+          managedRuntimeVersion: v4.0
+          managedPipelineMode: Integrated
+          enable32BitAppOnWin64: true
+          #test    
+          processModel.loadUserProfile: yes
+          
+    - name: create the directory for the chocolatey server IIS site
+      win_file:
+        path: C:\tools\logs
+        state: directory
+
+
+    - name: ChocolateyServer IIS site
+      win_iis_website:
+        name: "ChocolateyServer"
+        state: started
+        #port: 80
+        #ip: 127.0.0.1
+        #hostname: acme.local
+        application_pool: "ChocolateyServerAppPool"
+        physical_path: C:\tools\chocolatey.server
+        parameters: logfile.directory:c:\tools\logs
+      register: website
+
+    - name: Add IIS_IUSRS allow rights
+      win_acl:
+        path: C:\tools\chocolatey.server
+        user: IIS_IUSRS
+        rights: Read
+        type: allow
+        state: present
+        #inherit: ContainerInherit, ObjectInherit
+        #propagation: 'None'
+
+    - name: Add IUSR allow rights
+      win_acl:
+        path: C:\tools\chocolatey.server
+        user: IUSR
+        rights: Read
+        type: allow
+        state: present
+        #inherit: ContainerInherit, ObjectInherit
+        #propagation: 'None'
+        
+    - name: Add IIS APPPOOL allow rights
+      win_acl:
+        path: C:\tools\chocolatey.server
+        user: IIS APPPOOL\ChocolateyServerAppPool
+        rights: Read
+        type: allow
+        state: present
+        #inherit: ContainerInherit, ObjectInherit
+        #propagation: 'None'
+        
+    - name: Add IIS_IUSRS allow rights subfolder
+      win_acl:
+        path: C:\tools\chocolatey.server\App_Data
+        user: IIS_IUSRS
+        rights: Modify
+        type: allow
+        state: present
+        #inherit: ContainerInherit, ObjectInherit
+        #propagation: 'None'
+        
+    - name: Add IIS APPPOOL allow rights subfolder
+      win_acl:
+        path: C:\tools\chocolatey.server\App_Data
+        user: IIS APPPOOL\ChocolateyServerAppPool
+        rights: Modify
+        type: allow
+        state: present
+        #inherit: ContainerInherit, ObjectInherit
+        #propagation: 'None'
+#end of installation of chocolatey server
+
+#The following is optional, it's to download and set the chocolatey client for offline source
+    - name: Download chocolatey file through proxy
+      win_get_url:
+        url: 'https://chocolatey.org/api/v2/package/chocolatey/0.10.13'
+        dest: 'C:\Users\svcAnsibleRunas\Downloads\0.10.13.nupkg'
+        #proxy_url: http://proxyurl.com:8080
+        force_basic_auth: yes
+        
+    - name: upload chocolatey nupkg to local chocolatey server repository
+      win_command: powershell.exe -
+      args:
+#replace the choco server ip and uncomment following line 
+        #stdin: choco push 'C:\Users\svcAnsibleRunas\Downloads\0.10.13.nupkg' --source=http://choco server ip/ --api-key=chocolateyrocks --force
+      register: chocopushoutput
+      failed_when: chocopushoutput.rc == 1 and "Not Acceptable" not in chocopushoutput.stdout 
+      
+    - name: display debug chocopushoutput
+      debug:
+        var: chocopushoutput
+...
