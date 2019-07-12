@@ -1,0 +1,24 @@
+
+---
+- name: Uninstall Chocolatey.Server Playbook
+  hosts: all
+  
+  tasks:
+    - name: Ensure user ChocolateyServerAppPool is absent
+      win_user:
+        name: ChocolateyServerAppPool 
+        state: absent
+        
+    - name:  Uninstall chocolatey server
+      win_chocolatey:
+        name:  chocolatey.server
+        state: absent
+
+    - name: Ensure Chocolatey itself is uninstalled
+      win_chocolatey:
+        name: chocolatey
+        state: absent
+        validate_certs: no
+          
+...
+
